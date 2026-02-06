@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcapsules.a CMakeFiles/capsules.dir/src/capsules.cpp.o CMakeFiles/capsules.dir/src/flash_partition.cpp.o CMakeFiles/capsules.dir/src/mailbox.cpp.o CMakeFiles/capsules.dir/src/mbox_sram.cpp.o CMakeFiles/capsules.dir/src/mci.cpp.o CMakeFiles/capsules.dir/src/mcu_mbox.cpp.o CMakeFiles/capsules.dir/src/system.cpp.o
+/usr/bin/ranlib libcapsules.a

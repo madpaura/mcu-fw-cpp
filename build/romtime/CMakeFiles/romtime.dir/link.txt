@@ -1,0 +1,2 @@
+/usr/bin/ar qc libromtime.a CMakeFiles/romtime.dir/src/romtime.cpp.o CMakeFiles/romtime.dir/src/mci.cpp.o CMakeFiles/romtime.dir/src/soc_manager.cpp.o CMakeFiles/romtime.dir/src/static_ref.cpp.o CMakeFiles/romtime.dir/src/platform_host.cpp.o
+/usr/bin/ranlib libromtime.a

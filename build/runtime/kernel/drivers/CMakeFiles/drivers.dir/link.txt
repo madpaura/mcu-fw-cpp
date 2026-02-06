@@ -1,0 +1,2 @@
+/usr/bin/ar qc libdrivers.a CMakeFiles/drivers.dir/doe/doe.cpp.o CMakeFiles/drivers.dir/flash/flash.cpp.o CMakeFiles/drivers.dir/i3c/i3c.cpp.o CMakeFiles/drivers.dir/mcu_mbox/mcu_mbox.cpp.o
+/usr/bin/ranlib libdrivers.a

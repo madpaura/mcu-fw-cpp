@@ -1,0 +1,2 @@
+/usr/bin/ar qc libveer.a CMakeFiles/veer.dir/src/veer.cpp.o CMakeFiles/veer.dir/src/chip.cpp.o CMakeFiles/veer.dir/src/interrupt.cpp.o
+/usr/bin/ranlib libveer.a
