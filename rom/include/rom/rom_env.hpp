@@ -86,6 +86,12 @@ public:
      */
     Lifecycle& lc() { return lc_; }
     const Lifecycle& lc() const { return lc_; }
+    
+    /**
+     * Get Lifecycle controller (alias for lc())
+     */
+    Lifecycle& lifecycle() { return lc_; }
+    const Lifecycle& lifecycle() const { return lc_; }
 
     /**
      * Get OTP controller instance

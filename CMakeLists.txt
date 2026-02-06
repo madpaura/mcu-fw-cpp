@@ -62,6 +62,7 @@ include_directories(
 add_subdirectory(romtime)
 add_subdirectory(rom)
 add_subdirectory(runtime)
+add_subdirectory(platforms)
 
 # Install targets
 install(DIRECTORY include/ DESTINATION include)

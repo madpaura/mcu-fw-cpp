@@ -51,6 +51,36 @@ LifecycleState Lifecycle::state() const {
     }
 }
 
+LifecycleControllerState Lifecycle::current_state() const {
+    LifecycleState s = state();
+    
+    switch (s) {
+        case LifecycleState::Raw:
+            return LifecycleControllerState::RawState;
+        case LifecycleState::TestUnlocked0:
+        case LifecycleState::TestUnlocked1:
+        case LifecycleState::TestUnlocked2:
+        case LifecycleState::TestUnlocked3:
+            return LifecycleControllerState::TestUnlocked;
+        case LifecycleState::TestLocked0:
+        case LifecycleState::TestLocked1:
+        case LifecycleState::TestLocked2:
+            return LifecycleControllerState::TestLocked;
+        case LifecycleState::Dev:
+            return LifecycleControllerState::Dev;
+        case LifecycleState::Prod:
+            return LifecycleControllerState::Prod;
+        case LifecycleState::ProdEnd:
+            return LifecycleControllerState::ProdEnd;
+        case LifecycleState::Rma:
+            return LifecycleControllerState::Rma;
+        case LifecycleState::Scrap:
+            return LifecycleControllerState::Scrap;
+        default:
+            return LifecycleControllerState::Invalid;
+    }
+}
+
 bool Lifecycle::is_initialized() const {
     return (read_reg(REG_STATUS) & 0x01) != 0;
 }

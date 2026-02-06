@@ -22,7 +22,23 @@ namespace caliptra {
 namespace rom {
 
 /**
- * Lifecycle states
+ * Lifecycle controller states (high-level)
+ * These map to the controller's state machine
+ */
+enum class LifecycleControllerState : std::uint32_t {
+    RawState = 0,
+    TestUnlocked = 1,
+    TestLocked = 2,
+    Dev = 3,
+    Prod = 4,
+    ProdEnd = 5,
+    Rma = 6,
+    Scrap = 7,
+    Invalid = 0xFFFFFFFF,
+};
+
+/**
+ * Lifecycle states (detailed hardware states)
  */
 enum class LifecycleState : std::uint32_t {
     Raw = 0,
@@ -52,9 +68,15 @@ public:
     explicit Lifecycle(std::uintptr_t base_addr);
 
     /**
-     * Get current lifecycle state
+     * Get current lifecycle state (detailed)
      */
     LifecycleState state() const;
+    
+    /**
+     * Get current lifecycle controller state (high-level)
+     * This is the main state used by ROM for flow decisions
+     */
+    LifecycleControllerState current_state() const;
 
     /**
      * Check if lifecycle controller is initialized
