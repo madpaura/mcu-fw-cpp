@@ -113,7 +113,7 @@ void Mci::disable_wdt() {
 
 std::uint32_t Mci::generic_input_wires(std::size_t index) const {
     // Generic input wires registers at offset 0x04 and 0x08 from base
-    constexpr std::size_t REG_GENERIC_INPUT_WIRES_BASE = 0x288;  // Match Rust register layout
+    constexpr std::size_t REG_GENERIC_INPUT_WIRES_BASE = 0x400;  // Match Rust register layout
     if (index >= 2) {
         return 0;
     }

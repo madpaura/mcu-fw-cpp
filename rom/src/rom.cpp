@@ -407,29 +407,20 @@ error::McuResult<void> verify_mcu_mbox_axi_users(
     auto& mci = env.mci();
     mci.set_flow_milestone(BootMilestones::ROM_STARTED);
     
-    // Print device lifecycle state
+    // Print device lifecycle state (from MCI, like Rust does)
     romtime::print("[mcu-rom] Device lifecycle: ");
-    switch (env.lifecycle().current_state()) {
-        case LifecycleControllerState::RawState:
-            romtime::println("Raw");
+    switch (mci.device_lifecycle_state()) {
+        case romtime::DeviceLifecycleState::DeviceUnprovisioned:
+            romtime::println("Unprovisioned");
             break;
-        case LifecycleControllerState::TestUnlocked:
-            romtime::println("TestUnlocked");
+        case romtime::DeviceLifecycleState::DeviceManufacturing:
+            romtime::println("Manufacturing");
             break;
-        case LifecycleControllerState::Dev:
-            romtime::println("Dev");
-            break;
-        case LifecycleControllerState::Prod:
+        case romtime::DeviceLifecycleState::DeviceProvisioned:
             romtime::println("Production");
             break;
-        case LifecycleControllerState::ProdEnd:
-            romtime::println("ProductionEnd");
-            break;
-        case LifecycleControllerState::Rma:
-            romtime::println("RMA");
-            break;
-        case LifecycleControllerState::Scrap:
-            romtime::println("Scrap");
+        case romtime::DeviceLifecycleState::DeviceSecurityLocked:
+            romtime::println("SecurityLocked");
             break;
         default:
             romtime::println("Unknown");
@@ -450,26 +441,26 @@ error::McuResult<void> verify_mcu_mbox_axi_users(
     romtime::HexWord(reset_reason).print_to(romtime::g_writer);
     romtime::println("");
     
-    // Handle different reset reasons
-    McuResetReason reason = static_cast<McuResetReason>(reset_reason);
+    // Handle different reset reasons (use proper enum conversion, not raw cast)
+    romtime::McuResetReason reason = mci.reset_reason_enum();
     
     switch (reason) {
-        case McuResetReason::ColdBoot:
+        case romtime::McuResetReason::ColdBoot:
             romtime::println("[mcu-rom] Cold boot detected");
             ColdBoot::execute(env);
             break;
             
-        case McuResetReason::WarmReset:
+        case romtime::McuResetReason::WarmReset:
             romtime::println("[mcu-rom] Warm reset detected");
             WarmBoot::execute(env);
             break;
             
-        case McuResetReason::FirmwareBootReset:
+        case romtime::McuResetReason::FirmwareBootReset:
             romtime::println("[mcu-rom] Firmware boot reset detected");
             FwBoot::execute(env);
             break;
             
-        case McuResetReason::FirmwareHitlessUpdate:
+        case romtime::McuResetReason::FirmwareHitlessUpdate:
             romtime::println("[mcu-rom] Starting firmware hitless update flow");
             FwHitlessUpdate::execute(env);
             break;
