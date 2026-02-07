@@ -36,9 +36,9 @@ public:
     
     void write_char(char c) override {
 #ifdef TARGET_RISCV32
-        // Write to emulator console
-        volatile std::uint32_t* emu_output = reinterpret_cast<volatile std::uint32_t*>(0x2000'F004);
-        *emu_output = static_cast<std::uint32_t>(c);
+        // Write to emulator UART (matches Rust ROM at 0x1000_1041)
+        volatile std::uint8_t* uart_tx = reinterpret_cast<volatile std::uint8_t*>(0x1000'1041);
+        *uart_tx = static_cast<std::uint8_t>(c);
 #else
         // Write to stdout for host builds
         (void)c;
@@ -58,13 +58,13 @@ public:
         romtime::println("");
         
 #ifdef TARGET_RISCV32
-        // Set fatal error in MCI and halt
-        volatile std::uint32_t* mci_fatal = reinterpret_cast<volatile std::uint32_t*>(0x3000'000C);
+        // Set fatal error in MCI (MCI_BASE=0x21000000, fw_fatal_error offset=0x20)
+        volatile std::uint32_t* mci_fatal = reinterpret_cast<volatile std::uint32_t*>(0x2100'0020);
         *mci_fatal = code;
         
-        // Exit emulator
-        volatile std::uint32_t* emu_exit = reinterpret_cast<volatile std::uint32_t*>(0x2000'F000);
-        *emu_exit = 0;
+        // Exit emulator (matches Rust ROM at 0x1000_2000)
+        volatile std::uint32_t* emu_exit = reinterpret_cast<volatile std::uint32_t*>(0x1000'2000);
+        *emu_exit = code;
 #endif
         // Infinite loop
         while (true) {

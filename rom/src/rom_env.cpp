@@ -17,14 +17,14 @@ Abstract:
 namespace caliptra {
 namespace rom {
 
-// Default memory map (to be overridden by platform)
+// Memory map matching the emulator configuration (mcu-config-emulator)
 McuMemoryMap g_mcu_memory_map = {
-    .lc_offset = 0x30010000,
-    .otp_offset = 0x30020000,
-    .i3c_offset = 0x30030000,
-    .soc_offset = 0x30040000,
-    .mci_offset = 0x30050000,
-    .mbox_offset = 0x30060000,
+    .lc_offset = 0x70000400,   // LC controller
+    .otp_offset = 0x70000000,  // OTP controller
+    .i3c_offset = 0x20004000,  // I3C controller
+    .soc_offset = 0x30030000,  // SoC interface
+    .mci_offset = 0x21000000,  // MCI (Main CPU Interface)
+    .mbox_offset = 0x30020000, // Mailbox
 };
 
 // Default straps (to be overridden by platform)
