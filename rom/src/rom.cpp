@@ -436,6 +436,14 @@ error::McuResult<void> verify_mcu_mbox_axi_users(
             break;
     }
     
+    // Print MCI generic input wires (like Rust does)
+    romtime::print("[mcu-rom] MCI generic input wires[0]: ");
+    romtime::HexWord(mci.generic_input_wires(0)).print_to(romtime::g_writer);
+    romtime::println("");
+    romtime::print("[mcu-rom] MCI generic input wires[1]: ");
+    romtime::HexWord(mci.generic_input_wires(1)).print_to(romtime::g_writer);
+    romtime::println("");
+    
     // Read and print reset reason
     std::uint32_t reset_reason = mci.reset_reason();
     romtime::print("[mcu-rom] MCI RESET_REASON: 0x");

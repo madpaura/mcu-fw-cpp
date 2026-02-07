@@ -9,26 +9,25 @@ File Name:
 Abstract:
 
     Linker script for MCU ROM ELF.
-    This is a template - memory addresses should be adjusted for actual hardware.
+    Memory map matches mcu-config-emulator.
 
 --*/
 
 OUTPUT_ARCH("riscv")
 ENTRY(_start)
 
-/* Memory Map - Emulator defaults */
-/* These should match the memory map from mcu-config-emulator */
+/* Memory Map - Matches mcu-config-emulator */
+/* See platforms/emulator/config/src/lib.rs */
 MEMORY
 {
-    ROM     (rx)  : ORIGIN = 0x00000000, LENGTH = 64K
-    RAM     (rwx) : ORIGIN = 0x40000000, LENGTH = 128K
-    STACK   (rw)  : ORIGIN = 0x40020000, LENGTH = 16K
-    ESTACK  (rw)  : ORIGIN = 0x40024000, LENGTH = 4K
+    ROM     (rx)  : ORIGIN = 0x80000000, LENGTH = 64K
+    SRAM    (rwx) : ORIGIN = 0x40000000, LENGTH = 512K
+    DCCM    (rw)  : ORIGIN = 0x50000000, LENGTH = 16K
 }
 
-/* Stack sizes */
-STACK_SIZE = 16K;
-ESTACK_SIZE = 4K;
+/* Stack sizes - match Rust ROM (rom_stack_size, rom_estack_size) */
+STACK_SIZE = 0x2d00;    /* ~11KB */
+ESTACK_SIZE = 0x200;    /* 512 bytes */
 
 /* MRAC value - default for emulator */
 MRAC_VALUE = 0xAAAAAAAA;
@@ -47,14 +46,14 @@ SECTIONS
     /* Store the location of ROM data for copying */
     ROM_DATA_START = .;
 
-    /* RAM initialized data section */
+    /* RAM initialized data section - placed in SRAM, loaded from ROM */
     .data : ALIGN(4)
     {
         DATA_START = .;
         *(.data .data.*)
         *(.sdata .sdata.*)
         DATA_END = .;
-    } > RAM AT > ROM
+    } > SRAM AT > ROM
 
     /* RAM BSS section */
     .bss (NOLOAD) : ALIGN(4)
@@ -64,26 +63,26 @@ SECTIONS
         *(.sbss .sbss.*)
         *(COMMON)
         BSS_END = .;
-    } > RAM
+    } > SRAM
 
     /* Global pointer - set to middle of small data sections */
     PROVIDE(GLOBAL_POINTER = DATA_START + 0x800);
 
-    /* Stack section */
+    /* Stack - at end of SRAM */
     .stack (NOLOAD) : ALIGN(16)
     {
         STACK_ORIGIN = .;
         . = . + STACK_SIZE;
         STACK_TOP = .;
-    } > STACK
+    } > SRAM
 
-    /* Exception stack section */
+    /* Exception stack - after main stack */
     .estack (NOLOAD) : ALIGN(16)
     {
         ESTACK_ORIGIN = .;
         . = . + ESTACK_SIZE;
         ESTACK_START = .;
-    } > ESTACK
+    } > SRAM
 
     /* Discard sections we don't need */
     /DISCARD/ :
@@ -97,4 +96,3 @@ SECTIONS
 
 /* Verify sections fit */
 ASSERT(. <= ORIGIN(ROM) + LENGTH(ROM), "ROM overflow")
-ASSERT(DATA_END <= ORIGIN(RAM) + LENGTH(RAM), "RAM overflow")

@@ -12,10 +12,11 @@ set(ROM_SOURCES
     src/main.cpp
 )
 
-# For RISC-V builds, include the startup assembly
+# For RISC-V builds, include the startup assembly and libc stubs
 if(BUILD_RISCV32)
     list(APPEND ROM_SOURCES
         src/start.S
+        src/libc_stubs.cpp
     )
 endif()
 
@@ -44,13 +45,23 @@ if(BUILD_RISCV32)
         TARGET_RISCV32
     )
     
+    # Compile options for size optimization
+    target_compile_options(${ROM_ELF_NAME} PRIVATE
+        -Os                    # Optimize for size
+        -ffunction-sections    # Place each function in its own section
+        -fdata-sections        # Place each data item in its own section
+        -fno-exceptions        # No C++ exceptions
+        -fno-rtti              # No runtime type info
+        -fno-threadsafe-statics # No thread-safe static initialization
+    )
+    
     # Linker flags for bare-metal RISC-V
     target_link_options(${ROM_ELF_NAME} PRIVATE
         -T${LINKER_SCRIPT}
         -nostartfiles
         -nostdlib
         -static
-        -Wl,--gc-sections
+        -Wl,--gc-sections      # Remove unused sections
         -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${ROM_ELF_NAME}.map
     )
     

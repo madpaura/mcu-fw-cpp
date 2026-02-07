@@ -2,38 +2,16 @@
 # For Caliptra MCU SW C++ Port
 #
 # Usage:
-#   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/riscv32-toolchain.cmake ..
-#
-# Prerequisites:
-#   Install riscv32-unknown-elf-gcc toolchain from:
-#   - https://github.com/riscv-collab/riscv-gnu-toolchain
-#   - Or use prebuilt: https://github.com/riscv-collab/riscv-gnu-toolchain/releases
-#
-# Set RISCV_TOOLCHAIN_PATH environment variable or edit this file
+#   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/riscv32-toolchain.cmake -DBUILD_RISCV32=ON ..
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR riscv32)
 
-# Try to find toolchain prefix
-if(DEFINED ENV{RISCV_TOOLCHAIN_PATH})
-    set(RISCV_TOOLCHAIN_PATH "$ENV{RISCV_TOOLCHAIN_PATH}")
-    set(CROSS_COMPILE "${RISCV_TOOLCHAIN_PATH}/bin/riscv32-unknown-elf-")
-else()
-    # Try common locations
-    find_program(RISCV_GCC riscv32-unknown-elf-gcc 
-        PATHS 
-            /opt/riscv/bin
-            /usr/local/bin
-            /usr/bin
-            $ENV{HOME}/.local/bin
-    )
-    if(RISCV_GCC)
-        get_filename_component(RISCV_BIN_DIR ${RISCV_GCC} DIRECTORY)
-        set(CROSS_COMPILE "${RISCV_BIN_DIR}/riscv32-unknown-elf-")
-    else()
-        set(CROSS_COMPILE "riscv32-unknown-elf-")
-    endif()
-endif()
+# Use the toolchain at /opt/riscv/bin
+set(RISCV_TOOLCHAIN_PATH "/opt/riscv/bin")
+set(CROSS_COMPILE "${RISCV_TOOLCHAIN_PATH}/riscv32-unknown-elf-")
+
+message(STATUS "Using RISC-V cross-compiler: ${CROSS_COMPILE}gcc")
 
 set(CMAKE_C_COMPILER ${CROSS_COMPILE}gcc)
 set(CMAKE_CXX_COMPILER ${CROSS_COMPILE}g++)

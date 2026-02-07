@@ -133,6 +133,13 @@ public:
     void disable_wdt();
 
     /**
+     * Get generic input wires value
+     * @param index Wire index (0 or 1)
+     * @return Wire value
+     */
+    std::uint32_t generic_input_wires(std::size_t index) const;
+
+    /**
      * Get raw reset reason register value
      */
     std::uint32_t reset_reason() const;
