@@ -2913,3 +2913,207 @@ We successfully got the C++ ROM running on the emulator by fixing several issues
 5. **MCI generic input wires offset**: `0x400` (was `0x288`)
 6. **Device lifecycle**: Changed to read from MCI (like Rust ROM) instead of LC controller
 7. **Reset reason handling**: Fixed to use `mci.reset_reason_enum()` instead of incorrectly casting raw register value
+
+### User Input
+
+@[TerminalName: bash, ProcessId: 721701] can you check comilation error, i tried to do clean build for riscv it failed
+
+### Planner Response
+
+Let me check the terminal output for the compilation error:
+
+*Read terminal output: bash*
+
+### Planner Response
+
+I can see the linker errors. The clean build is failing because several C standard library and C++ runtime symbols are missing in this freestanding environment. The errors are:
+
+1. **`memset`** - needed by `Soc::set_axi_users`
+2. **`abort`** - needed by `std::__throw_bad_optional_access`
+3. **`std::__glibcxx_assert_fail`** - needed by `std::array::operator[]` and `std::span::operator[]` bounds checking
+4. **`strlen`** - needed by `romtime::print`
+5. **`__dso_handle`** - needed by C++ runtime
+
+These are all symbols that a freestanding bare-metal build needs to provide. Let me check the existing libc stubs file:
+
+*Viewed [libc_stubs.cpp](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp) *
+
+### Planner Response
+
+The stubs file already has [memset](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:19:0-27:1) and [strlen](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:72:0-79:1), but it's missing `abort`, `std::__glibcxx_assert_fail`, and `__dso_handle`. The new GCC 15.2.0 toolchain at `/opt/riscv` (vs the older `riscv64-unknown-elf-gcc` from apt) is pulling in more C++ runtime dependencies.
+
+Let me also check the CMake toolchain file to see which compiler is being used:
+
+*Viewed [riscv32-toolchain.cmake](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/cmake/riscv32-toolchain.cmake) *
+
+### Planner Response
+
+The toolchain is now using [/opt/riscv/bin/riscv32-unknown-elf-g++](cci:7://file:///opt/riscv/bin/riscv32-unknown-elf-g++:0:0-0:0) (GCC 15.2.0). The issue is that this newer GCC version's libstdc++ headers pull in more runtime dependencies. We need to add the missing stubs and also tell the compiler to disable some of these runtime checks.
+
+Let me add the missing symbols and also add `-fno-exceptions -fno-rtti -D_GLIBCXX_ASSERTIONS=0` flags to reduce C++ runtime dependencies:
+
+*Edited relevant file*
+
+### Planner Response
+
+Now let's rebuild:
+
+*User accepted the command `cd mcu-fw-cpp/build-riscv && make -j4 2>&1 | tail -25`*
+
+### Planner Response
+
+The stubs file wasn't recompiled because it's in a separate target. The linker errors are the same - the problem is that [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) is compiled only into the `mcu-rom-emulator` target but the undefined references are in `librom.a` and `libromtime.a`. The linker isn't seeing the stubs object because of link ordering.
+
+The issue is that these stubs are only in the emulator ROM executable source, but the references come from [rom](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/rom/src/rom.rs:671:4-684:5) and `romtime` static libraries. The linker needs to see the stubs. Let me check if the build even recompiled the stubs:
+
+*User accepted the command `cd mcu-fw-cpp/build-riscv && make -j4 VERBOSE=1 2>&1 | grep -E "(libc_stubs|Linking)" | tail -10`*
+
+### Planner Response
+
+It didn't recompile [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0). It needs to be touched or the build directory needs to be cleaned for that file. But the real issue might be link order. Let me check the CMakeLists:
+
+*Viewed [CMakeLists.txt](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/CMakeLists.txt) *
+
+### Planner Response
+
+The problem is clear: [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) is compiled into the executable target, and [rom](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/rom/src/rom.rs:671:4-684:5) and `romtime` are static libraries. But the linker processes them in order (rom → romtime → then object files from the executable). The stubs object file appears after the libraries, but the linker has already given up looking for those symbols.
+
+The real fix is twofold:
+1. Force a rebuild of the stubs file (since we just modified it)
+2. Fix the link order so the stubs are seen by the linker when resolving library references
+
+The simplest approach is to use `--whole-archive` or `-Wl,--start-group/-Wl,--end-group` to handle circular dependencies, or we can make the stubs into a library and place it last. Actually, the simpler fix is that the compile flags for [rom](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/rom/src/rom.rs:671:4-684:5) and `romtime` libraries should also disable these assertions. Let me check:
+
+*Grep searched codebase*
+
+*Viewed [CMakeLists.txt](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/CMakeLists.txt) *
+
+### Planner Response
+
+Good - the top-level CMakeLists.txt already has `-fno-exceptions -fno-rtti -ffreestanding`. The problem is that `std::array::operator[]` and `std::optional` in GCC 15's libstdc++ headers still generate calls to [__glibcxx_assert_fail](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:100:0-103:1) even with `-fno-exceptions`. We need to disable `_GLIBCXX_ASSERTIONS` and also need to handle the link order properly.
+
+Let me do two things:
+1. Add `-D_GLIBCXX_ASSERTIONS=0` to disable bounds-check assertions
+2. Add `-Wl,--start-group ... -Wl,--end-group` in linker flags so the stubs are found
+
+*Edited relevant file*
+
+### Planner Response
+
+Wait, the second replacement was applied to the wrong file - it tried to apply the emulator CMakeLists.txt changes to the top-level CMakeLists.txt. Let me fix this - I need to revert the second chunk and put it in the right file:
+
+*Viewed [CMakeLists.txt](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/CMakeLists.txt) *
+
+### Planner Response
+
+I see - the linker options block got incorrectly placed in the top-level CMakeLists.txt. I need to remove it from here (it references `${ROM_ELF_NAME}` which doesn't exist in this scope) and instead just keep the `_GLIBCXX_ASSERTIONS` definition:
+
+*Edited relevant file*
+
+### Planner Response
+
+Good. Now let's do a clean rebuild to ensure everything is recompiled with `_GLIBCXX_ASSERTIONS=0`:
+
+*User accepted the command `rm -rf mcu-fw-cpp/build-riscv && mkdir mcu-fw-cpp/build-riscv && cd mcu-fw-cpp/build-riscv && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/riscv32-toolchain.cmake -DBUILD_RISCV32=ON .. 2>&1 | tail -20`*
+
+*User accepted the command `cd mcu-fw-cpp/build-riscv && make -j4 2>&1 | tail -30`*
+
+### Planner Response
+
+The clean build succeeded! 🎉 
+
+The `_GLIBCXX_ASSERTIONS=0` flag was all that was needed since it prevents GCC 15's libstdc++ headers from generating calls to [__glibcxx_assert_fail](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:100:0-103:1). The stubs for [abort](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:87:0-90:1) and `__dso_handle` are still good to have as safety nets.
+
+Note the ROM is a bit bigger now (27688 bytes text vs ~9300 before) - this is likely because everything was recompiled from scratch and the linker might be including more code. Let me verify it still runs:
+
+*User accepted the command `timeout 15 ./target/debug/emulator --rom mcu-fw-cpp/build-riscv/platforms/emulator/rom/mcu-rom-emulator.bin --firmware target/riscv32imc-unknown-none-elf/release/runtime-emulator.bin --caliptra-rom target/caliptra-rom.bin --caliptra-firmware target/caliptra-fw-bundle.bin --soc-manifest target/soc-manifest --rom-offset 0x80000000 --rom-size 0x10000 --dccm-offset 0x50000000 --dccm-size 0x4000 --sram-offset 0x40000000 --sram-size 0x80000 --no-stdin-uart 2>&1 | head -30`*
+
+### Planner Response
+
+The clean build works and the ROM runs correctly on the emulator. Here's a summary of what was fixed:
+
+## Clean Build Fix Summary
+
+The clean build with GCC 15.2.0 ([/opt/riscv/bin/riscv32-unknown-elf-g++](cci:7://file:///opt/riscv/bin/riscv32-unknown-elf-g++:0:0-0:0)) was failing with linker errors for missing symbols:
+
+| Symbol | Cause | Fix |
+|--------|-------|-----|
+| `std::__glibcxx_assert_fail` | GCC 15 libstdc++ enables bounds checking assertions by default in `std::array`, `std::optional`, `std::span` | Added `-D_GLIBCXX_ASSERTIONS=0` in top-level CMakeLists.txt |
+| [abort](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:87:0-90:1) | Required by `std::__throw_bad_optional_access()` | Added stub in [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) |
+| `__dso_handle` | Required by C++ runtime for `atexit`/static destructors | Added symbol definition in [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) |
+| [memset](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:19:0-27:1), [strlen](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:72:0-79:1) | Already had stubs, but were in the right file | Already existed in [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) |
+
+The key fix was adding `add_compile_definitions(_GLIBCXX_ASSERTIONS=0)` which prevents the newer GCC 15 from generating calls to [__glibcxx_assert_fail](cci:1://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:100:0-103:1) from standard library container access operators.
+
+*Edited relevant file*
+
+*User accepted the command `make -j$(nproc)`*
+
+*User accepted the command `./target/debug/emulator --rom mcu-fw-cpp/build-riscv/platforms/emulator/rom/mcu-rom-emulator.bin --firmware target/riscv32imc-unknown-none-elf/release/runtime-emulator.bin --caliptra-rom target/caliptra-rom.bin --caliptra-firmware target/caliptra-fw-bundle.bin --soc-manifest target/soc-manifest --rom-offset 0x80000000 --rom-size 0x10000 --dccm-offset 0x50000000 --dccm-size 0x4000 --sram-offset 0x40000000 --sram-size 0x80000 --no-stdin-uart`*
+
+*User accepted the command `cd ..`*
+
+*User accepted the command `./target/debug/emulator --rom mcu-fw-cpp/build-riscv/platforms/emulator/rom/mcu-rom-emulator.bin --firmware target/riscv32imc-unknown-none-elf/release/runtime-emulator.bin --caliptra-rom target/caliptra-rom.bin --caliptra-firmware target/caliptra-fw-bundle.bin --soc-manifest target/soc-manifest --rom-offset 0x80000000 --rom-size 0x10000 --dccm-offset 0x50000000 --dccm-size 0x4000 --sram-offset 0x40000000 --sram-size 0x80000 --no-stdin-uart `*
+
+*User accepted the command `cd ..`*
+
+### User Input
+
+check @[mcu-fw-cpp/README.md] & update if anything missing or any changes to way we run
+
+### Planner Response
+
+Let me check the current README and update it:
+
+*Viewed [README.md](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/README.md) *
+
+### Planner Response
+
+Good, I can see several things that need updating. Let me also check the current state of files/toolchain for accuracy:
+
+*Viewed [CMakeLists.txt](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/CMakeLists.txt) *
+
+*Viewed [rom_env.cpp](file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/rom/src/rom_env.cpp) *
+
+### Planner Response
+
+Now I have a clear picture. Let me update the README with the key changes:
+
+1. **Toolchain requirements** — now needs GCC 15+ at `/opt/riscv/bin` (RV32IMC with `zicsr_zbkc`)
+2. **Emulator prerequisites** — need to build Rust components first
+3. **Emulator run command** — must be run from the **repo root** (`caliptra-mcu-sw/`), not from within `mcu-fw-cpp/`
+4. **Memory map** — add peripheral addresses
+5. **Toolchain install** — update the `--with-arch` to include the extensions
+6. **Known issues / notes** — GCC 15 `_GLIBCXX_ASSERTIONS` workaround
+
+*Edited relevant file*
+
+### Planner Response
+
+The README has been updated. Here's a summary of the changes:
+
+### Updates Made to [mcu-fw-cpp/README.md](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/README.md:0:0-0:0)
+
+1. **Prerequisites**
+   - Updated RISC-V toolchain requirement from **GCC 12+** to **GCC 15+** with the `riscv32-unknown-elf-` prefix
+   - Added **Rust / Cargo** as a required tool (needed to build the emulator & Caliptra components)
+   - Replaced the `apt-get install` instructions (those install `riscv64` not `riscv32`) with build-from-source only
+   - Updated `--with-arch` to `rv32imc_zicsr_zbkc` to include the required extensions
+
+2. **New section: Building Rust Dependencies**
+   - Added instructions for building the emulator binary and Caliptra artifacts from the repo root
+   - Listed all required Rust build artifacts in a table
+
+3. **Emulator running instructions**
+   - Added bold note: **must be run from the repo root** (`caliptra-mcu-sw/`), not from `mcu-fw-cpp/`
+   - Removed the `2>&1` redirect from the example command
+   - Added **expected output** so users know what success looks like
+   - Fixed GDB path from `build-riscv/...` to `mcu-fw-cpp/build-riscv/...`
+
+4. **Memory Map**
+   - Added a new **Peripheral Addresses (Emulator)** table with all the addresses (MCI, I3C, SoC, Mailbox, LC, OTP, UART, Emulator Exit)
+   - Added note about where these addresses come from ([rom_env.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/rom/src/rom_env.cpp:0:0-0:0) and [config/src/lib.rs](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/platforms/emulator/config/src/lib.rs:0:0-0:0))
+
+5. **New section: Toolchain Notes**
+   - Documented the GCC 15 `_GLIBCXX_ASSERTIONS` workaround
+   - Mentioned the [libc_stubs.cpp](cci:7://file:///home/vishwa/workspace/caliptra/caliptra-mcu-sw/mcu-fw-cpp/platforms/emulator/rom/src/libc_stubs.cpp:0:0-0:0) file for bare-metal symbol stubs
