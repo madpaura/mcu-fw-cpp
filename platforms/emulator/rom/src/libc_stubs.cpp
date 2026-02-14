@@ -85,7 +85,24 @@ void __cxa_pure_virtual() {
     while (1) {}
 }
 
+// abort - required by std::__throw_bad_optional_access and others
+void abort() {
+    while (1) {}
+}
+
+// __dso_handle - required by C++ runtime for atexit / static destructors
+void* __dso_handle = nullptr;
+
 } // extern "C"
+
+// std::__glibcxx_assert_fail - called by std::array/std::span/std::optional
+// bounds checking in libstdc++ debug/assertion mode (GCC 15+)
+namespace std {
+void __glibcxx_assert_fail(const char* /*file*/, int /*line*/,
+                           const char* /*function*/, const char* /*condition*/) {
+    while (1) {}  // Halt on assertion failure
+}
+} // namespace std
 
 // C++ operator new/delete stubs
 // Since we don't use dynamic allocation in ROM, these should never be called

@@ -86,7 +86,7 @@ extern "C" [[noreturn]] void exception_handler() {
 
 #ifdef TARGET_RISCV32
 // Main entry point for RISC-V - called from startup assembly
-extern "C" void main() {
+extern "C" int main() {
     // Initialize printer
     romtime::set_printer(&g_emulator_writer);
     

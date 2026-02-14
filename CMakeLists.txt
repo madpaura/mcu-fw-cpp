@@ -32,6 +32,9 @@ if(BUILD_RISCV32)
     set(CMAKE_SYSTEM_NAME Generic)
     set(CMAKE_SYSTEM_PROCESSOR riscv32)
     add_compile_definitions(TARGET_RISCV32)
+    # Disable libstdc++ assertions (bounds checking in std::array, std::optional etc.)
+    # that pull in __glibcxx_assert_fail at link time in GCC 15+
+    add_compile_definitions(_GLIBCXX_ASSERTIONS=0)
     # VeeR EL2 with Zicsr (CSR access) and Zbkc (carryless multiply for CRC)
     add_compile_options(
         -march=rv32imc_zicsr_zbkc
