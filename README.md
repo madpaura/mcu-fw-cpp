@@ -79,26 +79,49 @@ Caliptra MCU SW C++ is a bare-metal firmware implementation designed for secure 
 
 ### Required Tools
 
-| Tool             | Minimum Version | Purpose           |
-| ---------------- | --------------- | ----------------- |
-| CMake            | 3.16+           | Build system      |
-| GCC/Clang        | C++20 support   | Host compiler     |
-| RISC-V Toolchain | GCC 12+         | Cross-compilation |
+| Tool             | Minimum Version | Purpose                                    |
+| ---------------- | --------------- | ------------------------------------------ |
+| CMake            | 3.16+           | Build system                               |
+| GCC/Clang        | C++20 support   | Host compiler                              |
+| RISC-V Toolchain | GCC 15+         | Cross-compilation (`riscv32-unknown-elf-`) |
+| Rust / Cargo     | Latest stable   | Building emulator & Caliptra components    |
 
 ### RISC-V Toolchain Installation
 
-The project expects the RISC-V toolchain at `/opt/riscv/bin`. Install using:
+The project expects the RISC-V 32-bit bare-metal toolchain at `/opt/riscv/bin`.
+The toolchain prefix must be `riscv32-unknown-elf-`.
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install gcc-riscv64-unknown-elf
-
-# Or build from source (recommended for RV32IMC support)
+# Build from source (recommended)
 git clone https://github.com/riscv-collab/riscv-gnu-toolchain
 cd riscv-gnu-toolchain
-./configure --prefix=/opt/riscv --with-arch=rv32imc --with-abi=ilp32
-make -j$(nproc)
+./configure --prefix=/opt/riscv --with-arch=rv32imc_zicsr_zbkc --with-abi=ilp32
+sudo make -j$(nproc)
 ```
+
+> **Note:** The `zicsr` extension (CSR access instructions) and `zbkc` extension
+> (carryless multiply for CRC) are required by the VeeR EL2 target.
+
+### Building Rust Dependencies (Emulator & Caliptra)
+
+Before running the C++ ROM on the emulator, you must build the Rust-based
+emulator and Caliptra components from the **repo root** (`caliptra-mcu-sw/`):
+
+```bash
+# From the repo root (caliptra-mcu-sw/)
+cargo build                  # Builds the emulator binary → target/debug/emulator
+cargo xtask runtime run --help  # Shows all runtime/emulator options
+```
+
+This produces the following artifacts needed by the emulator:
+
+| Artifact              | Path                                                              |
+| --------------------- | ----------------------------------------------------------------- |
+| Emulator binary       | `target/debug/emulator`                                           |
+| Caliptra ROM          | `target/caliptra-rom.bin`                                         |
+| Caliptra FW bundle    | `target/caliptra-fw-bundle.bin`                                   |
+| SoC manifest          | `target/soc-manifest`                                             |
+| Rust runtime firmware | `target/riscv32imc-unknown-none-elf/release/runtime-emulator.bin` |
 
 ---
 
@@ -270,9 +293,11 @@ BITFLAGS(MyFlags, uint32_t) { FLAG_A = 0x01, FLAG_B = 0x02 };
 
 ### Emulator
 
-Run the firmware in the Caliptra emulator:
+Run the C++ ROM firmware in the Caliptra emulator. **This command must be run
+from the repo root (`caliptra-mcu-sw/`)**, not from inside `mcu-fw-cpp/`:
 
 ```bash
+# From the repo root: caliptra-mcu-sw/
 ./target/debug/emulator \
   --rom mcu-fw-cpp/build-riscv/platforms/emulator/rom/mcu-rom-emulator.bin \
   --firmware target/riscv32imc-unknown-none-elf/release/runtime-emulator.bin \
@@ -285,7 +310,22 @@ Run the firmware in the Caliptra emulator:
   --dccm-size 0x4000 \
   --sram-offset 0x40000000 \
   --sram-size 0x80000 \
-  --no-stdin-uart 2>&1
+  --no-stdin-uart
+```
+
+Expected output on success:
+
+```
+[mcu-rom] Hello from CPP ROM
+[mcu-rom] Device lifecycle: Unprovisioned
+[mcu-rom] MCI generic input wires[0]: 00000000
+[mcu-rom] MCI generic input wires[1]: 00000000
+[mcu-rom] MCI RESET_REASON: 0x00000000
+[mcu-rom] Cold boot detected
+[ROM] Cold boot flow started
+
+Running Caliptra ROM ...
+...
 ```
 
 ### Debugging
@@ -293,10 +333,10 @@ Run the firmware in the Caliptra emulator:
 Debug using GDB with the emulator's GDB stub:
 
 ```bash
-# Start emulator with GDB server (port 3333)
+# Start emulator with GDB server (add --gdb-port 3333)
 # Then connect with GDB:
 
-gdb-multiarch build-riscv/platforms/emulator/rom/mcu-rom-emulator.elf \
+gdb-multiarch mcu-fw-cpp/build-riscv/platforms/emulator/rom/mcu-rom-emulator.elf \
   -ex "set architecture riscv:rv32" \
   -ex "target remote localhost:3333" \
   -ex "info registers" \
@@ -379,11 +419,48 @@ if (result.is_ok()) {
 
 ## Memory Map
 
+### Core Memory Regions
+
 | Region | Start Address | Size   | Description                 |
 | ------ | ------------- | ------ | --------------------------- |
 | ROM    | `0x80000000`  | 64 KB  | Boot ROM                    |
 | SRAM   | `0x40000000`  | 512 KB | Main memory                 |
 | DCCM   | `0x50000000`  | 16 KB  | Data Closely Coupled Memory |
+
+### Peripheral Addresses (Emulator)
+
+| Peripheral    | Base Address | Description                             |
+| ------------- | ------------ | --------------------------------------- |
+| MCI           | `0x21000000` | Main CPU Interface                      |
+| I3C           | `0x20004000` | I3C Controller                          |
+| SoC Interface | `0x30030000` | SoC interface registers                 |
+| Mailbox       | `0x30020000` | Caliptra Mailbox                        |
+| LC Controller | `0x70000400` | Lifecycle controller                    |
+| OTP           | `0x70000000` | One-Time Programmable memory controller |
+| UART          | `0x10001041` | Emulator UART output (byte-wide write)  |
+| Emulator Exit | `0x10002000` | Write to halt emulator (emulator-only)  |
+
+> **Note:** These addresses must match the emulator's memory map defined in
+> `platforms/emulator/config/src/lib.rs`. The C++ ROM initializes them in
+> `rom/src/rom_env.cpp`.
+
+---
+
+## Toolchain Notes
+
+### GCC 15+ Workaround
+
+GCC 15's libstdc++ headers enable `_GLIBCXX_ASSERTIONS` by default, which
+generates calls to `std::__glibcxx_assert_fail()` from `std::array::operator[]`,
+`std::optional`, and `std::span`. Since this is a bare-metal freestanding build
+with no C++ runtime, this is disabled via:
+
+```cmake
+add_compile_definitions(_GLIBCXX_ASSERTIONS=0)
+```
+
+Minimal libc stubs (`memset`, `memcpy`, `strlen`, `abort`, etc.) are provided in
+`platforms/emulator/rom/src/libc_stubs.cpp`.
 
 ---
 

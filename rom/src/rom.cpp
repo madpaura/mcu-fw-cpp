@@ -395,7 +395,7 @@ error::McuResult<void> verify_mcu_mbox_axi_users(
 // =============================================================================
 
 [[noreturn]] void rom_start(RomParameters& params) {
-    romtime::println("[mcu-rom] Hello from ROM");
+    romtime::println("[mcu-rom] Hello from CPP ROM");
     
     // Create ROM environment with all peripherals
     RomEnv env;
